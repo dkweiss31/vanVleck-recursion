@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import sympy as smp
+from sympy import Float
 from sympy.physics.quantum.boson import BosonOp
 from sympy.physics.quantum import Dagger, Commutator
 from sympy.physics.quantum.operatorordering import normal_ordered_form
@@ -11,8 +12,8 @@ import scipy as sp
 
 
 class Term:
-    def __init__(self, freq: float, prefactor: float, op: Optional[BosonOp]):
-        self.freq = freq
+    def __init__(self, freq, prefactor, op):
+        self.freq = smp.S(freq)
         self.prefactor = smp.S(prefactor)
         self.op = op
 
@@ -37,8 +38,38 @@ class Term:
         elif original_term.op != other.op:
             return original_term, False
         else:
-            original_term.prefactor += other.prefactor
-            return original_term, True
+            new_term = Term(original_term.freq, original_term.prefactor + other.prefactor, original_term.op)
+            return new_term, True
+
+    def derivative(self):
+        new_term = deepcopy(self)
+        new_term.prefactor *= smp.S(new_term.freq)
+        return new_term
+
+    def integrate(self):
+        new_term = deepcopy(self)
+        new_term.prefactor *= smp.S(1.0 / new_term.freq)
+        return new_term
+
+    def check_if_prefactor_zero(self):
+        term = deepcopy(self)
+        if term.prefactor == smp.S(0):
+            return True
+        for elem in term.prefactor.args:
+            if isinstance(elem, Float):
+                if np.abs(elem) < 1e-12:
+                    return True
+        return False
+
+    def check_if_freq_zero(self):
+        term = deepcopy(self)
+        if term.freq == smp.S(0):
+            return True
+        for elem in term.freq.args:
+            if isinstance(elem, Float):
+                if np.abs(elem) < 1e-12:
+                    return True
+        return False
 
 
 class Terms:
@@ -47,7 +78,8 @@ class Terms:
 
     def __rmul__(self, other):
         new_terms = []
-        for term in self.terms:
+        old_terms = deepcopy(self)
+        for term in old_terms.terms:
             new_terms.append(other * term)
         return Terms(new_terms)
 
@@ -56,30 +88,59 @@ class Terms:
 
     def simplify(self):
         """treat a Terms object as a sum that can be simplified """
+        old_terms = deepcopy(self)
         new_terms = []
         combined_idxs = []
-        for i, term_1 in enumerate(self.terms):
+        for i, term_1 in enumerate(old_terms.terms):
             # check to make sure the operator isn't trivial and
             # that we haven't combined this operator already
-            if term_1.op != 0.0 and term_1.prefactor != 0.0 and i not in combined_idxs:
-                new_term = term_1
-                for j, term_2 in enumerate(self.terms[i + 1 :]):
-                    new_term, same = term_1.combine_if_same(term_2)
+            new_term = term_1
+            if not term_1.check_if_prefactor_zero() and i not in combined_idxs:
+                for j, term_2 in enumerate(old_terms.terms[i + 1:]):
+                    new_term, same = new_term.combine_if_same(term_2)
                     if same:
                         combined_idxs.append(i + j + 1)
-                if new_term.prefactor != 0.0:
+                if not new_term.check_if_prefactor_zero():
+                    if new_term.check_if_freq_zero():
+                        new_term.freq = smp.S(0)
                     new_terms.append(new_term)
         return Terms(new_terms)
 
     def power(self, n):
         """treat a Terms object as a sum that can be raised to a power"""
+        old_terms = deepcopy(self)
         new_terms = []
-        prod_tuples = list(product(self.terms, repeat=n))
+        prod_tuples = list(product(old_terms.terms, repeat=n))
         for prod_tuple in prod_tuples:
-            prod = 1.0
+            prod = smp.S(1)
             for elem in prod_tuple:
                 prod = prod * elem
             new_terms.append(prod)
+        return Terms(new_terms).normal_order()
+
+    def derivative(self):
+        old_terms = deepcopy(self)
+        new_terms = []
+        for term in old_terms.terms:
+            if not term.check_if_freq_zero():
+                new_terms.append(term.derivative())
+        return Terms(new_terms)
+
+    def integrate(self):
+        old_terms = deepcopy(self)
+        new_terms = []
+        for term in old_terms.terms:
+            if not term.check_if_freq_zero():
+                new_terms.append(term.integrate())
+        return Terms(new_terms)
+
+    def normal_order(self):
+        old_terms = deepcopy(self)
+        new_terms = []
+        for term in old_terms.terms:
+            normal_ordered_op = normal_ordered_form(term.op)
+            new_term = Term(term.freq, term.prefactor, normal_ordered_op)
+            new_terms.append(new_term)
         return Terms(new_terms)
 
 
@@ -88,7 +149,7 @@ class TimeIndependentHamiltonian:
         self.H = H
 
     def full_kamiltonian(self, n: int) -> Terms:
-        terms = Terms([])
+        terms = Terms([Term(smp.S(0), smp.S(0), smp.S(1))])
         for k in range(n + 2):
             terms += self.kamiltonian(n, k).simplify()
         return terms
@@ -98,33 +159,34 @@ class TimeIndependentHamiltonian:
             return self.H
         if k == 1:
             return (
-                self.derivative(self.generator(n + 1))
+                self.generator(n + 1).derivative()
                 + self.list_commutator(self.generator(n), self.H)
             ).simplify()
         if 1 < k <= n + 1:
-            terms = []
+            terms = Terms([Term(smp.S(0), smp.S(0), smp.S(1))])
             for m in range(0, n):
                 gen = self.generator(n - m)
                 kam = self.kamiltonian(m, k - 1)
                 terms += smp.S(1 / k) * self.list_commutator(gen, kam)
-            return Terms(terms).simplify()
+            return terms.simplify()
         else:
-            return Terms([Term(0.0, 0.0, None)])
+            return Terms([Term(smp.S(0), smp.S(0), smp.S(1))])
 
     def generator(self, np1: int) -> Terms:
         if np1 == 1:
-            return smp.S(-1) * self.integrate(self.H)
+            S0 = smp.S(-1) * self.H.integrate()
+            return S0
         elif np1 > 1:
             Sn = self.generator(np1 - 1)
-            Snp1 = smp.S(-1) * self.integrate(self.list_commutator(Sn, self.H))
+            Snp1 = smp.S(-1) * (self.list_commutator(Sn, self.H)).integrate()
             for k in range(2, np1 + 1):
                 for m in range(0, np1 - 1):
                     gen = self.generator(np1 - 1 - m)
                     kam = self.kamiltonian(m, k - 1)
                     Snp1 += smp.S(1 / k) * self.list_commutator(gen, kam)
-            return Terms(Snp1)
+            return Snp1
         else:
-            return Terms([Term(0.0, 0.0, None)])
+            return Terms([Term(smp.S(0), smp.S(0), smp.S(1))])
 
     def list_commutator(self, terms_1: Terms, terms_2: Terms) -> Terms:
         result = []
@@ -136,55 +198,17 @@ class TimeIndependentHamiltonian:
                 result.append(Term(freq, pref, comm))
         return Terms(result).simplify()
 
-    def derivative(self, terms: Terms) -> Terms:
-        new_terms = []
-        for term in terms.terms:
-            if term.freq != 0:
-                term.prefactor *= smp.S(term.freq)
-                new_terms.append(term)
-        return Terms(new_terms)
-
-    def integrate(self, terms: Terms) -> Terms:
-        new_terms = []
-        for term in terms.terms:
-            if term.freq != 0:  # generally don't integrate constant terms
-                term.prefactor *= smp.S(1.0 / term.freq)
-                new_terms.append(term)
-        return Terms(new_terms)
-
 
 delta, omega_d, g4, PI = smp.symbols("delta omega_d g4 PI")
 a = BosonOp("a")
-H0 = Term(0.0, 1.0, Dagger(a) * a)
-Hp1 = Term(1.0, 3.0, a)
-Hm1 = Term(-1.0, 3.0, Dagger(a))
-H3 = Term(-1.0, 5.0, Dagger(a))
-H = Terms([H0, Hp1, Hm1])
-static_ham = TimeIndependentHamiltonian(H)
-K0 = static_ham.full_kamiltonian(0).simplify()
-simpl_H = H.simplify()
-Hp1m1 = Hp1 * Hm1  # Hp1.multiply_term(Hm1)
-H = Terms([H0, Hp1, Hm1])
 
-
-H0 = Term(0.0, delta, Dagger(a) * a)
-H1 = Term(smp.S(-1) * smp.S(5 / 6) * omega_d, 1.0, a)
-H2 = Term(smp.S(5 / 6) * omega_d, 1.0, Dagger(a))
-H3 = Term(omega_d, PI, 1.0)
-H4 = Term(-omega_d, PI, 1.0)
-H4 = Term(-omega_d, PI, 1.0)
+H0 = Term(smp.S(0), delta, Dagger(a) * a)
+H1 = Term(smp.S(-1) * smp.S(5 / 6) * omega_d, smp.S(1), a)
+H2 = Term(smp.S(5 / 6) * omega_d, smp.S(1), Dagger(a))
+H3 = Term(omega_d, PI, smp.S(1))
+H4 = Term(-omega_d, PI, smp.S(1))
 g4terms = g4 * (Terms([H1, H2, H3, H4]).power(4).simplify())
-H = Terms([H0]) + g4terms
+H = (Terms([H0]) + g4terms).normal_order()
 static_ham = TimeIndependentHamiltonian(H)
-K0 = static_ham.full_kamiltonian(0).simplify()
-Hp1 = Term(1.0, 3.0, a)
-Hm1 = Term(-1.0, 3.0, Dagger(a))
-Hp1m1 = Hp1 * Hm1  # Hp1.multiply_term(Hm1)
-H = Terms([H0, Hp1, Hm1])
-H = Terms([H0, Hp1])
-myprod = H.power(2)
-Hbad = Term(0.0, 0.0, None)
-
-
-K0 = static_ham.full_kamiltonian(1)
-print(0)
+K0_full = static_ham.full_kamiltonian(0)
+K0_full_simp = K0_full.simplify()
