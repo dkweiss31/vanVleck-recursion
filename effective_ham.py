@@ -17,20 +17,20 @@ class Term:
         self.op = op
 
     def __mul__(self, other):
-        '''multiply two terms of type Term'''
+        """multiply two terms of type Term"""
         new_freq = self.freq + other.freq
         new_pref = self.prefactor * other.prefactor
         new_op = self.op * other.op
         return Term(new_freq, new_pref, new_op)
 
     def __rmul__(self, other):
-        '''multiply a term of type Term by a float'''
+        """multiply a term of type Term by a float"""
         new_term = deepcopy(self)
         new_term.prefactor *= other
         return new_term
 
     def combine_if_same(self, other):
-        '''combine two Term objects if they have the same operator content, time dependence'''
+        """combine two Term objects if they have the same operator content, time dependence"""
         original_term = deepcopy(self)
         if original_term.freq != other.freq:
             return original_term, False
@@ -55,7 +55,7 @@ class Terms:
         return Terms(self.terms + terms.terms)
 
     def simplify(self):
-        '''treat a Terms object as a sum that can be simplified '''
+        """treat a Terms object as a sum that can be simplified """
         new_terms = []
         combined_idxs = []
         for i, term_1 in enumerate(self.terms):
@@ -63,7 +63,7 @@ class Terms:
             # that we haven't combined this operator already
             if term_1.op != 0.0 and term_1.prefactor != 0.0 and i not in combined_idxs:
                 new_term = term_1
-                for j, term_2 in enumerate(self.terms[i+1:]):
+                for j, term_2 in enumerate(self.terms[i + 1 :]):
                     new_term, same = term_1.combine_if_same(term_2)
                     if same:
                         combined_idxs.append(i + j + 1)
@@ -72,7 +72,7 @@ class Terms:
         return Terms(new_terms)
 
     def power(self, n):
-        '''treat a Terms object as a sum that can be raised to a power'''
+        """treat a Terms object as a sum that can be raised to a power"""
         new_terms = []
         prod_tuples = list(product(self.terms, repeat=n))
         for prod_tuple in prod_tuples:
@@ -89,7 +89,7 @@ class TimeIndependentHamiltonian:
 
     def full_kamiltonian(self, n: int) -> Terms:
         terms = Terms([])
-        for k in range(n+2):
+        for k in range(n + 2):
             terms += self.kamiltonian(n, k).simplify()
         return terms
 
@@ -97,7 +97,10 @@ class TimeIndependentHamiltonian:
         if n == k == 0:
             return self.H
         if k == 1:
-            return (self.derivative(self.generator(n + 1)) + self.list_commutator(self.generator(n), self.H)).simplify()
+            return (
+                self.derivative(self.generator(n + 1))
+                + self.list_commutator(self.generator(n), self.H)
+            ).simplify()
         if 1 < k <= n + 1:
             terms = []
             for m in range(0, n):
@@ -118,7 +121,7 @@ class TimeIndependentHamiltonian:
                 for m in range(0, np1 - 1):
                     gen = self.generator(np1 - 1 - m)
                     kam = self.kamiltonian(m, k - 1)
-                    Snp1 += smp.S(1/k) * self.list_commutator(gen, kam)
+                    Snp1 += smp.S(1 / k) * self.list_commutator(gen, kam)
             return Terms(Snp1)
         else:
             return Terms([Term(0.0, 0.0, None)])
@@ -145,11 +148,12 @@ class TimeIndependentHamiltonian:
         new_terms = []
         for term in terms.terms:
             if term.freq != 0:  # generally don't integrate constant terms
-                term.prefactor *= smp.S(1. / term.freq)
+                term.prefactor *= smp.S(1.0 / term.freq)
                 new_terms.append(term)
         return Terms(new_terms)
 
-delta, omega_d, g4, PI = smp.symbols('delta omega_d g4 PI')
+
+delta, omega_d, g4, PI = smp.symbols("delta omega_d g4 PI")
 a = BosonOp("a")
 H0 = Term(0.0, 1.0, Dagger(a) * a)
 Hp1 = Term(1.0, 3.0, a)
@@ -159,9 +163,8 @@ H = Terms([H0, Hp1, Hm1])
 static_ham = TimeIndependentHamiltonian(H)
 K0 = static_ham.full_kamiltonian(0).simplify()
 simpl_H = H.simplify()
-Hp1m1 = Hp1 * Hm1 #Hp1.multiply_term(Hm1)
+Hp1m1 = Hp1 * Hm1  # Hp1.multiply_term(Hm1)
 H = Terms([H0, Hp1, Hm1])
-
 
 
 H0 = Term(0.0, delta, Dagger(a) * a)
@@ -176,12 +179,11 @@ static_ham = TimeIndependentHamiltonian(H)
 K0 = static_ham.full_kamiltonian(0).simplify()
 Hp1 = Term(1.0, 3.0, a)
 Hm1 = Term(-1.0, 3.0, Dagger(a))
-Hp1m1 = Hp1 * Hm1 #Hp1.multiply_term(Hm1)
+Hp1m1 = Hp1 * Hm1  # Hp1.multiply_term(Hm1)
 H = Terms([H0, Hp1, Hm1])
 H = Terms([H0, Hp1])
 myprod = H.power(2)
 Hbad = Term(0.0, 0.0, None)
-
 
 
 K0 = static_ham.full_kamiltonian(1)
