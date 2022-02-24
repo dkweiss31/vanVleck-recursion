@@ -5,6 +5,7 @@ from sympy.physics.quantum.boson import BosonOp
 from sympy.physics.quantum import Dagger, Commutator
 from sympy.physics.quantum.operatorordering import normal_ordered_form
 from copy import deepcopy
+from itertools import product
 import numpy as np
 import scipy as sp
 
@@ -16,34 +17,69 @@ class Term:
         self.op = op
 
     def __mul__(self, other):
-        new_term = deepcopy(self)
-        new_term.prefactor *= smp.S(other)
-        return new_term
+        '''multiply two terms of type Term'''
+        new_freq = self.freq + other.freq
+        new_pref = self.prefactor * other.prefactor
+        new_op = self.op * other.op
+        return Term(new_freq, new_pref, new_op)
 
     def __rmul__(self, other):
+        '''multiply a term of type Term by a float'''
         new_term = deepcopy(self)
-        new_term.prefactor *= smp.S(other)
+        new_term.prefactor *= other
         return new_term
+
+    def combine_if_same(self, other):
+        '''combine two Term objects if they have the same operator content, time dependence'''
+        original_term = deepcopy(self)
+        if original_term.freq != other.freq:
+            return original_term, False
+        elif original_term.op != other.op:
+            return original_term, False
+        else:
+            original_term.prefactor += other.prefactor
+            return original_term, True
 
 
 class Terms:
     def __init__(self, terms: List[Term]):
         self.terms = terms
 
-    def __mul__(self, other):
-        new_terms = []
-        for term in self.terms:
-            new_terms.append(term * smp.S(other))
-        return Terms(new_terms)
-
     def __rmul__(self, other):
         new_terms = []
         for term in self.terms:
-            new_terms.append(term * smp.S(other))
+            new_terms.append(other * term)
         return Terms(new_terms)
 
     def __add__(self, terms):
         return Terms(self.terms + terms.terms)
+
+    def simplify(self):
+        '''treat a Terms object as a sum that can be simplified '''
+        new_terms = []
+        combined_idxs = []
+        for i, term_1 in enumerate(self.terms):
+            # check to make sure the operator isn't trivial and
+            # that we haven't combined this operator already
+            if term_1.op != 0.0 and term_1.prefactor != 0.0 and i not in combined_idxs:
+                for j, term_2 in enumerate(self.terms[i+1:]):
+                    new_term, same = term_1.combine_if_same(term_2)
+                    if same:
+                        combined_idxs.append(i + j + 1)
+                if new_term.prefactor != 0.0:
+                    new_terms.append(new_term)
+        return Terms(new_terms)
+
+    def power(self, n):
+        '''treat a Terms object as a sum that can be raised to a power'''
+        new_terms = []
+        prod_tuples = list(product(self.terms, repeat=n))
+        for prod_tuple in prod_tuples:
+            prod = 1.0
+            for elem in prod_tuple:
+                prod = prod * elem
+            new_terms.append(prod)
+        return Terms(new_terms)
 
 
 class TimeIndependentHamiltonian:
@@ -81,7 +117,7 @@ class TimeIndependentHamiltonian:
                 for m in range(0, np1 - 1):
                     gen = self.generator(np1 - 1 - m)
                     kam = self.kamiltonian(m, k - 1)
-                    Snp1 += smp.S(1 / k) * self.list_commutator(gen, kam)
+                    Snp1 += smp.S(1/k) * self.list_commutator(gen, kam)
             return Terms(Snp1)
         else:
             return Terms([Term(0.0, 0.0, None)])
