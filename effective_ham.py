@@ -154,14 +154,38 @@ class TimeIndependentHamiltonian:
                 new_terms.append(term)
         return Terms(new_terms)
 
-
+delta, omega_d, g4, PI = smp.symbols('delta omega_d g4 PI')
 a = BosonOp("a")
-H0 = Term(0.0, 5.0, Dagger(a) * a)
+# H0 = Term(0.0, 1.0, Dagger(a) * a)
+# Hp1 = Term(1.0, 3.0, a)
+# Hm1 = Term(-1.0, 3.0, Dagger(a))
+# H3 = Term(-1.0, 5.0, Dagger(a))
+# H = Terms([H0, Hp1, Hm1, H3])
+# simpl_H = H.simplify()
+# Hp1m1 = Hp1 * Hm1 #Hp1.multiply_term(Hm1)
+# H = Terms([H0, Hp1, Hm1])
+
+
+
+H0 = Term(0.0, delta, Dagger(a) * a)
+H1 = Term(smp.S(-1) * smp.S(5 / 6) * omega_d, 1.0, a)
+H2 = Term(smp.S(5 / 6) * omega_d, 1.0, Dagger(a))
+H3 = Term(omega_d, PI, 1.0)
+H4 = Term(-omega_d, PI, 1.0)
+H4 = Term(-omega_d, PI, 1.0)
+g4terms = g4 * (Terms([H1, H2, H3, H4]).power(4).simplify())
+H = Terms([H0]) + g4terms
+static_ham = TimeIndependentHamiltonian(H)
+K0 = static_ham.full_kamiltonian(0).simplify()
 Hp1 = Term(1.0, 3.0, a)
 Hm1 = Term(-1.0, 3.0, Dagger(a))
+Hp1m1 = Hp1 * Hm1 #Hp1.multiply_term(Hm1)
+H = Terms([H0, Hp1, Hm1])
+H = Terms([H0, Hp1])
+myprod = H.power(2)
 Hbad = Term(0.0, 0.0, None)
-H = Terms([H0, Hp1, Hm1, Hbad])
 
-static_ham = TimeIndependentHamiltonian(H)
+
+
 K0 = static_ham.full_kamiltonian(1)
 print(0)
