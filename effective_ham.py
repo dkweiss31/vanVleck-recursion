@@ -62,6 +62,7 @@ class Terms:
             # check to make sure the operator isn't trivial and
             # that we haven't combined this operator already
             if term_1.op != 0.0 and term_1.prefactor != 0.0 and i not in combined_idxs:
+                new_term = term_1
                 for j, term_2 in enumerate(self.terms[i+1:]):
                     new_term, same = term_1.combine_if_same(term_2)
                     if same:
@@ -89,21 +90,21 @@ class TimeIndependentHamiltonian:
     def full_kamiltonian(self, n: int) -> Terms:
         terms = Terms([])
         for k in range(n+2):
-            terms += self.simplify(self.kamiltonian(n, k))
+            terms += self.kamiltonian(n, k).simplify()
         return terms
 
     def kamiltonian(self, n: int, k: int) -> Terms:
         if n == k == 0:
             return self.H
         if k == 1:
-            return self.simplify(self.dot(self.generator(n + 1)) + self.list_commutator(self.generator(n), self.H))
+            return (self.derivative(self.generator(n + 1)) + self.list_commutator(self.generator(n), self.H)).simplify()
         if 1 < k <= n + 1:
             terms = []
             for m in range(0, n):
                 gen = self.generator(n - m)
                 kam = self.kamiltonian(m, k - 1)
                 terms += smp.S(1 / k) * self.list_commutator(gen, kam)
-            return self.simplify(Terms(terms))
+            return Terms(terms).simplify()
         else:
             return Terms([Term(0.0, 0.0, None)])
 
@@ -122,11 +123,6 @@ class TimeIndependentHamiltonian:
         else:
             return Terms([Term(0.0, 0.0, None)])
 
-    def simplify(self, terms):
-        def _filter_func(term):
-            return (term.op is not None) or (term.op != 0.0)
-        return Terms(list(filter(_filter_func, terms.terms)))
-
     def list_commutator(self, terms_1: Terms, terms_2: Terms) -> Terms:
         result = []
         for term_1 in terms_1.terms:
@@ -135,14 +131,13 @@ class TimeIndependentHamiltonian:
                 freq = term_1.freq + term_2.freq
                 pref = term_1.prefactor * term_2.prefactor
                 result.append(Term(freq, pref, comm))
-        return self.simplify(Terms(result))
+        return Terms(result).simplify()
 
-    def dot(self, terms: Terms) -> Terms:
+    def derivative(self, terms: Terms) -> Terms:
         new_terms = []
         for term in terms.terms:
             if term.freq != 0:
-                term.prefactor *= term.freq
-                term.freq -= 1
+                term.prefactor *= smp.S(term.freq)
                 new_terms.append(term)
         return Terms(new_terms)
 
@@ -150,20 +145,22 @@ class TimeIndependentHamiltonian:
         new_terms = []
         for term in terms.terms:
             if term.freq != 0:  # generally don't integrate constant terms
-                term.prefactor *= smp.S(1. / (1j * term.freq))
+                term.prefactor *= smp.S(1. / term.freq)
                 new_terms.append(term)
         return Terms(new_terms)
 
 delta, omega_d, g4, PI = smp.symbols('delta omega_d g4 PI')
 a = BosonOp("a")
-# H0 = Term(0.0, 1.0, Dagger(a) * a)
-# Hp1 = Term(1.0, 3.0, a)
-# Hm1 = Term(-1.0, 3.0, Dagger(a))
-# H3 = Term(-1.0, 5.0, Dagger(a))
-# H = Terms([H0, Hp1, Hm1, H3])
-# simpl_H = H.simplify()
-# Hp1m1 = Hp1 * Hm1 #Hp1.multiply_term(Hm1)
-# H = Terms([H0, Hp1, Hm1])
+H0 = Term(0.0, 1.0, Dagger(a) * a)
+Hp1 = Term(1.0, 3.0, a)
+Hm1 = Term(-1.0, 3.0, Dagger(a))
+H3 = Term(-1.0, 5.0, Dagger(a))
+H = Terms([H0, Hp1, Hm1])
+static_ham = TimeIndependentHamiltonian(H)
+K0 = static_ham.full_kamiltonian(0).simplify()
+simpl_H = H.simplify()
+Hp1m1 = Hp1 * Hm1 #Hp1.multiply_term(Hm1)
+H = Terms([H0, Hp1, Hm1])
 
 
 
