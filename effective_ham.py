@@ -12,9 +12,9 @@ import scipy as sp
 
 
 class Term:
-    def __init__(self, freq, prefactor, op):
-        self.freq = smp.S(freq)
-        self.prefactor = smp.S(prefactor)
+    def __init__(self, freq=smp.S(0), prefactor=smp.S(0), op=smp.S(1)):
+        self.freq = freq
+        self.prefactor = prefactor
         self.op = op
 
     def __mul__(self, other):
@@ -149,7 +149,7 @@ class TimeIndependentHamiltonian:
         self.H = H
 
     def full_kamiltonian(self, n: int) -> Terms:
-        terms = Terms([Term(smp.S(0), smp.S(0), smp.S(1))])
+        terms = Terms([Term()])
         for k in range(n + 2):
             terms += self.kamiltonian(n, k).simplify()
         return terms
@@ -163,14 +163,14 @@ class TimeIndependentHamiltonian:
                 + self.list_commutator(self.generator(n), self.H)
             ).simplify()
         if 1 < k <= n + 1:
-            terms = Terms([Term(smp.S(0), smp.S(0), smp.S(1))])
+            terms = Terms([Term()])
             for m in range(0, n):
                 gen = self.generator(n - m)
                 kam = self.kamiltonian(m, k - 1)
                 terms += smp.S(1 / k) * self.list_commutator(gen, kam)
             return terms.simplify()
         else:
-            return Terms([Term(smp.S(0), smp.S(0), smp.S(1))])
+            return Terms([Term()])
 
     def generator(self, np1: int) -> Terms:
         if np1 == 1:
@@ -186,7 +186,7 @@ class TimeIndependentHamiltonian:
                     Snp1 += smp.S(1 / k) * self.list_commutator(gen, kam)
             return Snp1
         else:
-            return Terms([Term(smp.S(0), smp.S(0), smp.S(1))])
+            return Terms([Term()])
 
     def list_commutator(self, terms_1: Terms, terms_2: Terms) -> Terms:
         result = []
