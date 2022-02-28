@@ -31,6 +31,12 @@ class Term:
         new_term.prefactor *= other
         return new_term
 
+    def __add__(self, other):
+        """add two terms. Assumption is that the frequencies and operators are the same"""
+        new_term = deepcopy(self)
+        new_term.prefactor += other.prefactor
+        return new_term
+
     def combine_if_same(self, other):
         """combine two Term objects if they have the same operator content, time dependence"""
         original_term = deepcopy(self)
@@ -89,17 +95,21 @@ class Term:
     def extract_op_prefactors(self):
         """assumption is that old_term.op is of type Mul"""
         old_term = deepcopy(self)
-        new_pref = smp.S(1)
-        for elem in old_term.op.args:
-            # now need to check if this expression
-            # contains operators
-            not_contains_symbs = True
-            for symb in old_term.op.free_symbols:
-                not_contains_symbs = not_contains_symbs and symb not in elem.free_symbols
-            if not_contains_symbs:
-                new_pref *= elem
-        new_op = old_term.op / new_pref
-        return Term(old_term.freq, new_pref * old_term.prefactor, new_op)
+        if isinstance(old_term.op, Mul):
+            new_pref = smp.S(1)
+            for elem in old_term.op.args:
+                # now need to check if this expression
+                # contains operators
+                not_contains_symbs = True
+                for symb in old_term.op.free_symbols:
+                    not_contains_symbs = not_contains_symbs and symb not in elem.free_symbols
+                if not_contains_symbs:
+                    new_pref *= elem
+            new_op = old_term.op / new_pref
+            new_term = Term(old_term.freq, new_pref * old_term.prefactor, new_op)
+            return new_term
+        else:
+            return old_term
 
 
 class Terms:
@@ -202,13 +212,13 @@ class TimeIndependentHamiltonian:
         if k == 1:
             return (
                 self.generator(n + 1).derivative()
-                + self.list_commutator(self.generator(n), self.H)
+                + self.list_commutator(self.generator(n).cull_constants(), self.H)
             )
         if 1 < k <= n + 1:
             terms = Terms([Term()])
             for m in range(0, n):
-                gen = self.generator(n - m)
-                kam = self.kamiltonian(m, k - 1)
+                gen = self.generator(n - m).normal_order_and_expand().cull_constants()
+                kam = self.kamiltonian(m, k - 1).normal_order_and_expand().cull_constants()
                 terms += smp.S(1 / k) * self.list_commutator(gen, kam)
             return terms
         else:
@@ -220,7 +230,8 @@ class TimeIndependentHamiltonian:
             return S0
         elif np1 > 1:
             Sn = self.generator(np1 - 1)
-            Snp1 = smp.S(-1) * (self.list_commutator(Sn, self.H)).integrate().cull_constants()
+            Sn_norm = Sn.normal_order_and_expand().cull_constants()
+            Snp1 = smp.S(-1) * (self.list_commutator(Sn_norm, self.H)).integrate().cull_constants()
             for k in range(2, np1 + 1):
                 Snp1 += smp.S(-1) * self.kamiltonian(np1 - 1, k).integrate().cull_constants()
             return Snp1
@@ -229,12 +240,19 @@ class TimeIndependentHamiltonian:
 
     def list_commutator(self, terms_1: Terms, terms_2: Terms) -> Terms:
         result = []
+        result_counter = 0
+        op_freq_location = {}
         for term_1 in terms_1.terms:
             for term_2 in terms_2.terms:
                 comm = normal_ordered_form(Commutator(term_1.op, term_2.op).doit().expand())
-                new_term = Term(term_1.freq + term_2.freq, term_1.prefactor * term_2.prefactor, comm)
-                separated_ops = new_term.extract_multiple_ops()
-                result += separated_ops
+                new_terms_list = Term(term_1.freq + term_2.freq, term_1.prefactor * term_2.prefactor, comm).extract_multiple_ops()
+                for new_term in new_terms_list:
+                    if (new_term.op, new_term.freq) in op_freq_location:
+                        result[op_freq_location[(new_term.op, new_term.freq)]] += new_term
+                    else:
+                        result += [new_term]
+                        op_freq_location[(new_term.op, new_term.freq)] = result_counter
+                        result_counter += 1
         return Terms(result)
 
 
@@ -249,7 +267,7 @@ H4 = Term(-omega_d, PI, smp.S(1))
 #static_ham = TimeIndependentHamiltonian(Terms([Term()]))
 #list_comm = static_ham.list_commutator(Terms([H0 * H1, H0 * H2]), Terms([H0 * H3, H0 * H4])).simplify()
 
-g4terms = g4 * Terms([H1, H2, H3, H4]).power(2).cull_constants()
+g4terms = g4 * Terms([H1, H2, H3, H4]).power(4).cull_constants()
 g4terms_simp = g4terms.simplify().cull_constants()
 H = (Terms([H0]) + g4terms_simp).normal_order_and_expand().cull_constants()
 static_ham = TimeIndependentHamiltonian(H)
